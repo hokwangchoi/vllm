@@ -34,6 +34,7 @@ _DEEPGEMM_BLACKWELL_EXCLUDED_MODEL_TYPES: dict[str, tuple[int, ...]] = {
     "qwen3_5_moe_text": (100, 120),
     # Latency
     "kolibri1": (120,),
+    "qwen4_exp_text": (120,),
 }
 
 

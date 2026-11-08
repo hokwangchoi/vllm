@@ -71,3 +71,19 @@ def test_deep_gemm_needs_nvcc_12_9(
     _make_exe(nvcc)
     nvcc.write_text(f"#!/bin/sh\necho 'Cuda compilation tools, release {release}'\n")
     assert dg.is_deep_gemm_supported() is supported
+
+
+@pytest.mark.parametrize(
+    ("family", "disabled"), [(90, False), (100, False), (120, True)]
+)
+def test_qwen4_exp_skips_deep_gemm_on_sm12x(
+    monkeypatch: pytest.MonkeyPatch, family: int, disabled: bool
+):
+    """Triton decodes the small FP8 experts of Qwen3.8-Flash-Next faster than
+    DeepGEMM on SM12x."""
+    monkeypatch.setattr(
+        dg.current_platform,
+        "is_device_capability_family",
+        lambda capability, device_id=0: capability == family,
+    )
+    assert dg.should_auto_disable_deep_gemm("qwen4_exp_text") is disabled

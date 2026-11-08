@@ -17,6 +17,7 @@ import pytest
 import torch
 
 import vllm.model_executor.layers.fused_moe.modular_kernel as mk
+import vllm.model_executor.layers.fused_moe.oracle.fp8 as fp8_oracle
 from tests.kernels.moe.utils import make_dummy_moe_config
 from vllm.model_executor.layers.fused_moe.experts.cutlass_moe import (
     CutlassExpertsW4A8Fp8,
@@ -596,3 +597,42 @@ def test_make_kernel_delegates() -> None:
         None,  # routing_tables default
     )
     assert built_kernel is sentinel_kernel
+
+
+@pytest.mark.parametrize(
+    ("model_type", "expected"),
+    [
+        ("qwen4_exp_text", Fp8MoeBackend.TRITON),
+        ("qwen3_moe", Fp8MoeBackend.DEEPGEMM),
+    ],
+)
+def test_fp8_skips_deep_gemm_for_excluded_model(model_type, expected, monkeypatch):
+    """On SM12x, a model in the DeepGEMM exclusions gets the next FP8 backend
+    without `--moe-backend`; other models keep DeepGEMM."""
+    monkeypatch.delenv("VLLM_USE_DEEP_GEMM", raising=False)
+    monkeypatch.delenv("VLLM_MOE_USE_DEEP_GEMM", raising=False)
+    monkeypatch.setattr(
+        current_platform,
+        "is_device_capability_family",
+        lambda family, device_id=0: family == 120,
+    )
+    model_config = SimpleNamespace(
+        hf_text_config=SimpleNamespace(model_type=model_type)
+    )
+    monkeypatch.setattr(
+        fp8_oracle,
+        "get_current_vllm_config",
+        lambda: SimpleNamespace(model_config=model_config),
+    )
+    # Only DeepGEMM and Triton take block FP8 here, as on SM120.
+    monkeypatch.setattr(
+        Fp8MoEKernelOracle,
+        "try_backend",
+        lambda self, backend, *_, **__: (
+            (TritonExperts, [])
+            if backend in (Fp8MoeBackend.DEEPGEMM, Fp8MoeBackend.TRITON)
+            else (None, [])
+        ),
+    )
+    backend, _ = select_fp8_moe_backend(make_dummy_moe_config(), None, None)
+    assert backend is expected
