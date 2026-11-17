@@ -1122,13 +1122,9 @@ def _init_minimal_kv_cache_for_profiling(runner: "GPUModelRunner") -> None:
     kv_cache_groups = get_kv_cache_groups_from_builder(
         builder, runner.vllm_config, runner.get_kv_cache_layer_configs()
     )
-    # At least one block per sequence is required to capture the graphs.
-    min_blocks = (
-        min(runner.max_num_reqs, runner.compilation_config.max_cudagraph_capture_size)
-        or 1
-    )
+    # Capture uses zeroed dummy block tables, so every request maps to block 0.
     minimal_config = builder.get_kv_cache_config_from_groups(
-        runner.vllm_config, kv_cache_groups, num_blocks=min_blocks
+        runner.vllm_config, kv_cache_groups, num_blocks=1
     )
 
     runner.initialize_kv_cache(minimal_config, is_profiling=True)
